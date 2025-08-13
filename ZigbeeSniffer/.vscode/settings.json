@@ -1,0 +1,15 @@
+{
+    "idf.portWin": "COM3",
+    "idf.customExtraVars": {
+        "IDF_TARGET": "esp32c6"
+    },
+    "idf.openOcdConfigs": [
+        "board/esp32c6-builtin.cfg"
+    ],
+    "idf.flashType": "UART",
+    "files.associations": {
+        "sniffer.h": "c",
+        "pcap_types.h": "c",
+        "crc.h": "c"
+    },
+}
