@@ -7,4 +7,7 @@
 ## Инструкция пользования
 - Для начала необходимо прошить esp32c6 прошивкой [ZigbeeSniffer](./ZigbeeSniffer/). Там, в [sniffer.h](ZigbeeSniffer/main/sniffer.h), можно настроить нужный Zigbee-канал, скорость и пины для UART
 - В папке же [WiresharkSerialAdapter](./WiresharkSerialAdapter/) лежит исходный код и собранная программа интерфейса внешнего захвата. В файле [tasks.json](WiresharkSerialAdapter/ZigbeeSnifferAdapter/.vscode/tasks.json) можно выбрать параметры сборки (компилятор, пусть, где будет собран исполняемый файл, его название и т.д.)
-- Собранный файл [WireSharkSerialAdapter.exe](WiresharkSerialAdapter/WireSharkSerialAdapter.exe) необходимо поместить в папку Wirechark/extcap/. Теперь, при запуске Wireshark, в нём будет появляться ещё один доступный сетевой интерфейы "ZigbeeSniffer", в его параметрах можно настроить параметры UART и начать захват
+- Собранный файл [WireSharkSerialAdapter.exe](WiresharkSerialAdapter/WireSharkSerialAdapter.exe) необходимо поместить в папку Wirechark/extcap/. Теперь, при запуске Wireshark, в нём будет появляться ещё один доступный сетевой интерфейы "ZigbeeSniffer", в его параметрах можно настроить параметры UART, нужный zigbee-канал и начать захват
+
+## Исходный проект интерйеса
+- Интерфейс внешнего захвата для Wireshark, реализованного под modbus: [WireSharkSerialAdapter](https://github.com/jzhvymetal/WiresharkSerialAdapter?ysclid=meb3icz7iw12782561)

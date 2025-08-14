@@ -2,7 +2,6 @@
 #include "esp_ieee802154.h"
 #include "freertos/FreeRTOS.h"
 #include "driver/uart.h"
-// #include "driver/usb_serial_jtag.h"
 #include "esp_log.h"
 #include "esp_check.h"
 #include "nvs_flash.h"
@@ -166,7 +165,36 @@ uart_init(void) {
 
     ESP_ERROR_CHECK(uart_param_config(UART_NUM, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(UART_NUM, UART_TX_PIN, UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-    ESP_ERROR_CHECK(uart_driver_install(UART_NUM, BUF_SIZE * 2, 0, 0, NULL, intr_alloc_flags));
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM, BUF_SIZE * 2, BUF_SIZE * 2, 0, NULL, intr_alloc_flags));
+}
+
+void
+set_sniffered_channel(uint8_t cnannel) {
+    ESP_ERROR_CHECK(esp_ieee802154_set_channel(cnannel));
+    ESP_ERROR_CHECK(esp_ieee802154_receive());
+}
+
+void
+handler_commands() {
+    uint8_t RX_BUFFER[BUF_SIZE];
+    size_t len;
+
+    while(1) {
+        len = uart_read_bytes(UART_NUM, RX_BUFFER, BUF_SIZE, 20 / ( ( TickType_t ) 1000 / CONFIG_FREERTOS_HZ));
+        if (len) {
+            switch(*RX_BUFFER) {
+                case 0xCA:
+                    uint8_t channel = *(RX_BUFFER + 1);
+                    set_sniffered_channel(channel);
+                    printf("Now Zigbee sniffer worked on channel %d\n", esp_ieee802154_get_channel());
+                    break;
+                default:
+                    break;
+            }
+            uart_flush(UART_NUM);
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 }
 
 void 
@@ -180,5 +208,6 @@ app_main(void) {
 #if SNIFFER_DEBUG_MODE
     xTaskCreate(quality_task, "sniffer", 4096, NULL, 5, NULL);
 #endif
+    xTaskCreate(handler_commands, "commands_proc", 4096, NULL, 5, NULL);
     xTaskCreate(frame_processor_task, "frame_proc", 6120, NULL, 6, NULL);
 }

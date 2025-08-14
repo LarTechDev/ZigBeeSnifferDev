@@ -45,6 +45,7 @@ std::string ByteSize="8";
 std::string StopBits="1";
 std::string Parity="NONE";
 std::string FrameTiming="event";
+std::string Channel="11";
 std::string FrameDelay="15";
 std::string CaptureOutputPipeName="";
 std::string ControlInPipeName="";
@@ -155,6 +156,9 @@ DWORD WINAPI ComReadThreadFunc(LPVOID lpParam)
     bool b;
     double EV_Timeout=0;
     LARGE_INTEGER freq, start, end;
+
+    typeFrameByte SetChannelCommand[2] = {0xCA, (BYTE)((Channel[0] - 0x30) * 10 + (Channel[1] - 0x30))};
+    WriteFile(hComSerial, &SetChannelCommand, 2, NULL, NULL);
 
     while(hComSerial !=INVALID_HANDLE_VALUE)
     {
@@ -481,6 +485,29 @@ void print_extcap_config_stopbits()
     printf("%s", argString.c_str());
 }
 
+void print_extcap_config_channel()
+{
+    std::string  argString="";  
+    argString+="arg {number=5}{call=--channel}{display=Channel}{type=selector}\n";
+    argString+="value {arg=5}{value=11}{display=11}{default=true}\n";
+    argString+="value {arg=5}{value=12}{display=12}{default=false}\n";
+    argString+="value {arg=5}{value=13}{display=13}{default=false}\n";
+    argString+="value {arg=5}{value=14}{display=14}{default=false}\n";
+    argString+="value {arg=5}{value=15}{display=15}{default=false}\n";
+    argString+="value {arg=5}{value=16}{display=16}{default=false}\n";
+    argString+="value {arg=5}{value=17}{display=17}{default=false}\n";
+    argString+="value {arg=5}{value=18}{display=18}{default=false}\n";
+    argString+="value {arg=5}{value=19}{display=19}{default=false}\n";
+    argString+="value {arg=5}{value=20}{display=20}{default=false}\n";
+    argString+="value {arg=5}{value=21}{display=21}{default=false}\n";
+    argString+="value {arg=5}{value=22}{display=22}{default=false}\n";
+    argString+="value {arg=5}{value=23}{display=23}{default=false}\n";
+    argString+="value {arg=5}{value=24}{display=24}{default=false}\n";
+    argString+="value {arg=5}{value=25}{display=25}{default=false}\n";
+    argString+="value {arg=5}{value=26}{display=26}{default=false}\n";
+    printf("%s", argString.c_str());
+}
+
 void print_extcap_config()
 {
     print_extcap_config_comport();
@@ -488,6 +515,7 @@ void print_extcap_config()
     print_extcap_config_bytesize();
     print_extcap_config_parity();
     print_extcap_config_stopbits();
+    print_extcap_config_channel();
     // print_extcap_config_interframe();
     // print_extcap_config_dlt();
 }
@@ -587,7 +615,10 @@ bool ParseMainArg(int argc, char *argv[])
                 sArgOpt="--frame_timing";
                 pArgOptValue=&FrameTiming;
                 break;       
-                                    
+            case 10:
+                sArgOpt="--channel";
+                pArgOptValue=&Channel;
+                break;            
             default:
                 xExitCaseLoop=true;
             }
