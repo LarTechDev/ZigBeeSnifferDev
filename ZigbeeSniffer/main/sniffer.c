@@ -10,11 +10,19 @@
 static const char *TAG = "ZIGBEE_SNIFFER";
 
 #define FRAMES_BUFFER_LEN 64
+
+static uint16_t read_index = 0;
+static uint16_t write_index = 0;
+static uint16_t buffer_count = 0;
 static uint8_t rx_frame[FRAMES_BUFFER_LEN * MAX_SOURCE_FRAME_LEN];
 static esp_ieee802154_frame_info_t rx_frame_info[FRAMES_BUFFER_LEN];
-static uint16_t now_buffer_size = 0;
 
 static volatile bool radio_active = false;
+static volatile bool frame_send = false;
+
+static uint8_t  zigbee_channel  = ZIGBEE_CHANNEL;
+static uint64_t timestamp_fixer = 0;
+static uint64_t last_timestamp  = 0;
 
 void 
 pcap_send_data(const uint8_t *data, size_t len) {
@@ -49,7 +57,7 @@ quality_task(void *pvParameters) {
 void 
 frame_processor_task(void *pvParameters) {
     uint8_t lqi_padding[3] = PACKET_HEADER_LQI_PADDING;
-    uint8_t fcs_padding[3] = PACKET_HEADER_LQI_PADDING;
+    uint8_t fcs_padding[3] = PACKET_HEADER_FCS_PADDING;
 
 
     pcap_packet_t packet;
@@ -59,7 +67,6 @@ frame_processor_task(void *pvParameters) {
     packet.header.packet_info.header_info.length   = PACKET_HEADER_LENGTH;
     packet.header.packet_info.channel_info.type    = PACKET_HEADER_CHANNEL_TYPE;
     packet.header.packet_info.channel_info.length  = PACKET_HEADER_CHANNEL_LENGTH;
-    packet.header.packet_info.channel_info.channel = ZIGBEE_CHANNEL;
     packet.header.packet_info.channel_info.page    = PACKET_HEADER_CHANNEL_PAGE;
     packet.header.packet_info.channel_info.padding = PACKET_HEADER_CHANNEL_PADDING;
     packet.header.packet_info.rssi_info.type       = PACKET_HEADER_RSSI_TYPE;
@@ -70,35 +77,35 @@ frame_processor_task(void *pvParameters) {
     packet.header.packet_info.fcs_info.length      = PACKET_HEADER_FCS_LENGTH;
     packet.header.packet_info.fcs_info.fcs         = PACKET_HEADER_FCS;
 
-    memcpy(packet.header.packet_info.lqi_info.padding, lqi_padding, 3);
-    memcpy(packet.header.packet_info.fcs_info.padding, fcs_padding, 3);
-
     while(1) {
-        if(now_buffer_size) {
-            uint8_t len = *rx_frame;
-#if SNIFFER_DEBUG_MODE
-            printf("Processing frame (№%d), len:%d, RSSI:%d\n", now_buffer_size, len, (*rx_frame_info).rssi);
-#endif
-            packet.header.timestamp_sec              = (*rx_frame_info).timestamp / 1000000;
-            packet.header.timestamp_usec             = (*rx_frame_info).timestamp % 1000000;
-            packet.header.incl_length                = len + PACKET_HEADER_LENGTH;
-            packet.header.orig_length                = len + PACKET_HEADER_LENGTH;
-            packet.header.packet_info.rssi_info.rssi = (*rx_frame_info).rssi;
-            packet.header.packet_info.lqi_info.lqi   = (*rx_frame_info).lqi;
+        if(buffer_count && !frame_send) {
+            uint8_t len = *(rx_frame + read_index * MAX_SOURCE_FRAME_LEN);
 
-            memcpy(packet.payload, rx_frame + 1, len);
+#if SNIFFER_DEBUG_MODE
+            printf("Processing frame (№%d), len:%d, RSSI:%d\n", buffer_count, len, (*(rx_frame_info + read_index)).rssi);
+#endif
+
+            packet.header.packet_info.channel_info.channel = zigbee_channel;
+            packet.header.timestamp_sec                    = ((*(rx_frame_info + read_index)).timestamp - timestamp_fixer) / 1000000;
+            packet.header.timestamp_usec                   = ((*(rx_frame_info + read_index)).timestamp - timestamp_fixer) % 1000000;
+            packet.header.incl_length                      = len + PACKET_HEADER_LENGTH;
+            packet.header.orig_length                      = len + PACKET_HEADER_LENGTH;
+            packet.header.packet_info.rssi_info.rssi       = *(uint32_t*)&(float){(rx_frame_info + read_index)->rssi};
+            packet.header.packet_info.lqi_info.lqi         = (*(rx_frame_info + read_index)).lqi;
+
+            memcpy(packet.header.packet_info.lqi_info.padding, lqi_padding, 3);
+            memcpy(packet.header.packet_info.fcs_info.padding, fcs_padding, 3);
+            
+            memcpy(packet.payload, rx_frame + read_index * MAX_SOURCE_FRAME_LEN + 1, len);
             uint16_t right_crc = get_crc(packet.payload, len - 2);
             memcpy(packet.payload + len - 2, (uint8_t *)&right_crc, 2);
+                
+            pcap_send_data((uint8_t *)&packet, sizeof(packet.header) + len);
 
-            if (len) {
-                pcap_send_data((uint8_t *)&packet, sizeof(packet.header) + len);
-            }
-
-
-            now_buffer_size--;
-            memcpy(rx_frame, rx_frame + MAX_SOURCE_FRAME_LEN, MAX_SOURCE_FRAME_LEN * now_buffer_size);
+            read_index = (read_index + 1) % FRAMES_BUFFER_LEN;
+            buffer_count--;
         }
-        vTaskDelay(2);
+        vTaskDelay(3);
     }
 }
 
@@ -136,11 +143,13 @@ esp_ieee802154_receive_done(uint8_t *frame, esp_ieee802154_frame_info_t *frame_i
         return;
     }
 
-    if(frame && frame_info && *frame < MAX_SOURCE_FRAME_LEN && *frame) {
-        memcpy(rx_frame + now_buffer_size * MAX_SOURCE_FRAME_LEN, frame, *frame + 1);
-        memcpy((uint8_t *)(rx_frame_info + now_buffer_size), (uint8_t *)frame_info, sizeof(rx_frame_info));
-        now_buffer_size++;
-    } 
+    if(buffer_count < FRAMES_BUFFER_LEN && (frame && frame_info) && (*frame < MAX_SOURCE_FRAME_LEN && *frame > 0)) {
+        last_timestamp = frame_info->timestamp;
+        memcpy(rx_frame + write_index * MAX_SOURCE_FRAME_LEN, frame, *frame + 1);
+        memcpy((uint8_t *)(rx_frame_info + write_index), (uint8_t *)frame_info, sizeof(rx_frame_info));
+        write_index = (write_index + 1) % FRAMES_BUFFER_LEN;
+        buffer_count++;
+    }
 
     esp_ieee802154_receive_handle_done(frame);
 }
@@ -169,9 +178,11 @@ uart_init(void) {
 }
 
 void
-set_sniffered_channel(uint8_t cnannel) {
-    ESP_ERROR_CHECK(esp_ieee802154_set_channel(cnannel));
+set_sniffered_channel() {
+    ESP_ERROR_CHECK(esp_ieee802154_set_channel(zigbee_channel));
     ESP_ERROR_CHECK(esp_ieee802154_receive());
+
+    // timestamp_fixer = last_timestamp;
 }
 
 void
@@ -184,8 +195,8 @@ handler_commands() {
         if (len) {
             switch(*RX_BUFFER) {
                 case 0xCA:
-                    uint8_t channel = *(RX_BUFFER + 1);
-                    set_sniffered_channel(channel);
+                    zigbee_channel = *(RX_BUFFER + 1);
+                    set_sniffered_channel();
                     printf("Now Zigbee sniffer worked on channel %d\n", esp_ieee802154_get_channel());
                     break;
                 default:
@@ -193,7 +204,7 @@ handler_commands() {
             }
             uart_flush(UART_NUM);
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -205,9 +216,11 @@ app_main(void) {
     init_zigbee_sniffer();
 
     printf("Zigbee sniffer started on channel %d\n", esp_ieee802154_get_channel());
+
 #if SNIFFER_DEBUG_MODE
     xTaskCreate(quality_task, "sniffer", 4096, NULL, 5, NULL);
 #endif
-    xTaskCreate(handler_commands, "commands_proc", 4096, NULL, 5, NULL);
-    xTaskCreate(frame_processor_task, "frame_proc", 6120, NULL, 6, NULL);
+
+    xTaskCreate(handler_commands, "commands_proc", 4096, NULL, 4, NULL);
+    xTaskCreate(frame_processor_task, "frame_proc", 6120, NULL, 5, NULL);
 }

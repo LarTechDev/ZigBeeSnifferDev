@@ -3,7 +3,7 @@
 
 #include <string.h>
 
-#define MAX_SOURCE_FRAME_LEN          256
+#define MAX_SOURCE_FRAME_LEN          256 // 170 enough if max pirs-len is 73
 
 // Main PCAP-header params
 #define FILE_HEADER_MAGIC_NUMBER      0xA1B2C3D4
@@ -49,7 +49,7 @@ typedef struct pcap_packet_info_channel_s {
 typedef struct pcap_packet_info_rssi_s {
     uint16_t type;
     uint16_t length;
-    uint32_t rssi;
+    int32_t rssi;
 } pcap_packet_info_rssi_t;
 typedef struct pcap_packet_info_lqi_s {
     uint16_t type;
